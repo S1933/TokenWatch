@@ -12,6 +12,12 @@ export {
   OpenCodeGoAdapter,
   type OpenCodeGoAdapterDeps,
 } from "./providers/opencode-go.js";
+export {
+  ClaudeCodeAdapter,
+  type ClaudeCodeAdapterDeps,
+  type CredentialsFileReader,
+  type OAuthTokenExtractor,
+} from "./providers/claude-code.js";
 
 export type { Account, AccountCredentials } from "./types/account.js";
 export type {
