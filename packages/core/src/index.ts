@@ -8,6 +8,10 @@ export {
   parseLimitReset,
   type OpenRouterAdapterDeps,
 } from "./providers/openrouter.js";
+export {
+  OpenCodeGoAdapter,
+  type OpenCodeGoAdapterDeps,
+} from "./providers/opencode-go.js";
 
 export type { Account, AccountCredentials } from "./types/account.js";
 export type {
