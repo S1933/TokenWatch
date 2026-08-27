@@ -2,18 +2,23 @@
   "name": "tokenwatch",
   "version": "0.0.1",
   "private": true,
-  "description": "Local, read-only, multi-account AI credit monitor",
+  "description": "Local, read-only, multi-account AI credit monitor (CLI)",
   "type": "module",
   "engines": {
     "node": ">=22.0.0",
     "pnpm": ">=10.0.0"
   },
   "scripts": {
-    "dev": "pnpm -r --parallel run dev",
     "build": "pnpm -r run build",
     "test": "pnpm -r run test",
     "typecheck": "pnpm -r run typecheck",
-    "lint": "pnpm -r run lint"
+    "tw-help": "pnpm --filter @tokenwatch/cli run dev help",
+    "credits": "pnpm --filter @tokenwatch/cli run dev credits",
+    "credits:human": "pnpm --filter @tokenwatch/cli run dev credits --human",
+    "credits:refresh": "pnpm --filter @tokenwatch/cli run dev credits --refresh --human",
+    "accounts": "pnpm --filter @tokenwatch/cli run dev accounts",
+    "add-account": "pnpm --filter @tokenwatch/cli run dev add-account",
+    "remove-account": "pnpm --filter @tokenwatch/cli run dev remove-account"
   },
   "devDependencies": {
     "typescript": "^5.6.3",
