@@ -1,7 +1,7 @@
 import type { ProviderAdapter } from "../adapter.js";
 import { ProviderError } from "../errors.js";
 import type { Account } from "../types/account.js";
-import type { CreditSnapshot, CreditWindow } from "../types/credit.js";
+import type { CreditSnapshot, CreditWindow, WindowType } from "../types/credit.js";
 import type { ConnectionStatus } from "../types/status.js";
 
 const DEFAULT_BASE_URL = "https://opencode.ai";
@@ -12,26 +12,26 @@ export interface OpenCodeGoAdapterDeps {
   baseUrl?: string;
 }
 
-interface UsageWindow {
-  usageDollars?: number;
-  limitDollars?: number;
-  usagePercent?: number;
-  resetInSec?: number;
+interface UsageBucket {
+  status?: string;
+  percent?: number;
+  resetsAt?: string;
 }
 
 interface UsageResponse {
-  rolling5h?: UsageWindow | null;
-  weekly?: UsageWindow | null;
-  monthly?: UsageWindow | null;
-  subscribedAt?: string;
-  error?: { message?: string; code?: number };
+  usage?: {
+    rolling?: UsageBucket | null;
+    weekly?: UsageBucket | null;
+    monthly?: UsageBucket | null;
+  };
+  error?: { message?: string; type?: string };
 }
 
-const WINDOW_KEYS = ["rolling5h", "weekly", "monthly"] as const;
+const WINDOW_KEYS = ["rolling", "weekly", "monthly"] as const;
 type WindowKey = (typeof WINDOW_KEYS)[number];
 
-const WINDOW_TYPE_MAP: Record<WindowKey, CreditWindow["type"]> = {
-  rolling5h: "5h",
+const WINDOW_TYPE_MAP: Record<WindowKey, WindowType> = {
+  rolling: "5h",
   weekly: "weekly",
   monthly: "monthly",
 };
@@ -105,26 +105,29 @@ export class OpenCodeGoAdapter implements ProviderAdapter {
       });
     }
     const key = await this.keychainResolver(account.credentials.keychainRef);
-    const json = await this.callJson<UsageResponse>(`${this.baseUrl}/zen/go/v1/usage`, key);
-    if (process.env["TOKENWATCH_DEBUG"] === "1") {
-      process.stderr.write(`[opencode-go raw] ${JSON.stringify(json)}\n`);
-    }
+    const json = await this.callJson<UsageResponse>(
+      `${this.baseUrl}/zen/go/v1/usage`,
+      key,
+    );
     const now = new Date();
     const windows: CreditWindow[] = [];
-    for (const key of WINDOW_KEYS) {
-      const w = json[key];
-      if (!w) continue;
-      const limit = w.limitDollars ?? 0;
-      const used = w.usageDollars ?? 0;
-      if (limit <= 0) continue;
-      windows.push({
-        type: WINDOW_TYPE_MAP[key],
-        used,
-        limit,
-        remaining: Math.max(limit - used, 0),
-        unit: "usd",
-        resetAt: w.resetInSec != null ? new Date(now.getTime() + w.resetInSec * 1000) : null,
-      });
+    const usage = json.usage;
+    if (usage) {
+      for (const k of WINDOW_KEYS) {
+        const bucket = usage[k];
+        if (!bucket || typeof bucket.percent !== "number") continue;
+        if (bucket.status && bucket.status !== "ok") continue;
+        const percent = Math.max(0, Math.min(bucket.percent, 100));
+        const used = Math.round(percent * 100) / 100;
+        windows.push({
+          type: WINDOW_TYPE_MAP[k],
+          used,
+          limit: 100,
+          remaining: Math.round((100 - percent) * 100) / 100,
+          unit: "percent",
+          resetAt: bucket.resetsAt ? new Date(bucket.resetsAt) : null,
+        });
+      }
     }
     return {
       accountId: account.id,
@@ -146,7 +149,7 @@ export class OpenCodeGoAdapter implements ProviderAdapter {
         cause: err,
       });
     }
-    let body: string;
+    let body = "";
     try {
       body = await res.text();
     } catch {

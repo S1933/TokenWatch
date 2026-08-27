@@ -29,6 +29,26 @@ function makeFetch(handler: (url: string) => Response | Promise<Response>): type
   }) as typeof fetch;
 }
 
+const REAL_RESPONSE = {
+  usage: {
+    rolling: {
+      status: "ok",
+      percent: 0,
+      resetsAt: "2026-08-28T02:07:05.869Z",
+    },
+    weekly: {
+      status: "ok",
+      percent: 43,
+      resetsAt: "2026-08-31T00:00:00.869Z",
+    },
+    monthly: {
+      status: "ok",
+      percent: 96,
+      resetsAt: "2026-09-07T06:54:02.869Z",
+    },
+  },
+};
+
 describe("OpenCodeGoAdapter", () => {
   beforeEach(() => {
     vi.useFakeTimers();
@@ -39,7 +59,7 @@ describe("OpenCodeGoAdapter", () => {
   });
 
   it("testConnection returns ok on 200", async () => {
-    const fetchImpl = makeFetch(() => jsonResponse({ rolling5h: {} }));
+    const fetchImpl = makeFetch(() => jsonResponse(REAL_RESPONSE));
     const adapter = new OpenCodeGoAdapter({
       keychainResolver: async () => "sk-test",
       fetchImpl,
@@ -82,7 +102,7 @@ describe("OpenCodeGoAdapter", () => {
   it("testConnection rejects non api_key credentials", async () => {
     const adapter = new OpenCodeGoAdapter({
       keychainResolver: async () => "sk-test",
-      fetchImpl: makeFetch(() => jsonResponse({})),
+      fetchImpl: makeFetch(() => jsonResponse(REAL_RESPONSE)),
     });
     const status = await adapter.testConnection(
       makeAccount({ credentials: { kind: "manual" } }),
@@ -90,15 +110,8 @@ describe("OpenCodeGoAdapter", () => {
     expect(status).toMatchObject({ kind: "error", code: "unsupported" });
   });
 
-  it("fetchCredits maps the 3 USD windows correctly", async () => {
-    const fetchImpl = makeFetch(() =>
-      jsonResponse({
-        rolling5h: { usageDollars: 2.34, limitDollars: 12, usagePercent: 19.5, resetInSec: 7200 },
-        weekly: { usageDollars: 8.91, limitDollars: 30, usagePercent: 29.7, resetInSec: 345600 },
-        monthly: { usageDollars: 15, limitDollars: 60, usagePercent: 25, resetInSec: 1414800 },
-        subscribedAt: "2026-05-22T14:30:00Z",
-      }),
-    );
+  it("fetchCredits maps rolling/weekly/monthly to 5h/weekly/monthly percent windows", async () => {
+    const fetchImpl = makeFetch(() => jsonResponse(REAL_RESPONSE));
     const adapter = new OpenCodeGoAdapter({
       keychainResolver: async () => "sk-test",
       fetchImpl,
@@ -109,40 +122,40 @@ describe("OpenCodeGoAdapter", () => {
     const [w5h, wWeekly, wMonthly] = snap.windows;
     expect(w5h).toMatchObject({
       type: "5h",
-      used: 2.34,
-      limit: 12,
-      remaining: 9.66,
-      unit: "usd",
+      used: 0,
+      limit: 100,
+      remaining: 100,
+      unit: "percent",
     });
-    expect(w5h?.resetAt).toBeInstanceOf(Date);
+    expect(w5h?.resetAt).toEqual(new Date("2026-08-28T02:07:05.869Z"));
 
     expect(wWeekly).toMatchObject({
       type: "weekly",
-      used: 8.91,
-      limit: 30,
-      remaining: 21.09,
-      unit: "usd",
+      used: 43,
+      limit: 100,
+      remaining: 57,
+      unit: "percent",
     });
+    expect(wWeekly?.resetAt).toEqual(new Date("2026-08-31T00:00:00.869Z"));
 
     expect(wMonthly).toMatchObject({
       type: "monthly",
-      used: 15,
-      limit: 60,
-      remaining: 45,
-      unit: "usd",
+      used: 96,
+      limit: 100,
+      remaining: 4,
+      unit: "percent",
     });
-
-    const expectedMonthlyReset =
-      new Date("2026-08-27T18:00:00Z").getTime() + 1414800 * 1000;
-    expect(wMonthly?.resetAt?.getTime()).toBe(expectedMonthlyReset);
+    expect(wMonthly?.resetAt).toEqual(new Date("2026-09-07T06:54:02.869Z"));
   });
 
-  it("fetchCredits omits windows that are missing or have limit <= 0", async () => {
+  it("fetchCredits skips buckets that are missing", async () => {
     const fetchImpl = makeFetch(() =>
       jsonResponse({
-        rolling5h: { usageDollars: 0, limitDollars: 12, resetInSec: 7200 },
-        weekly: null,
-        monthly: { usageDollars: 0, limitDollars: 0, resetInSec: 1414800 },
+        usage: {
+          rolling: REAL_RESPONSE.usage.rolling,
+          weekly: null,
+          monthly: undefined,
+        },
       }),
     );
     const adapter = new OpenCodeGoAdapter({
@@ -153,7 +166,25 @@ describe("OpenCodeGoAdapter", () => {
     expect(snap.windows.map((w) => w.type)).toEqual(["5h"]);
   });
 
-  it("fetchCredits returns empty snapshot when no windows are present", async () => {
+  it("fetchCredits skips buckets whose status is not 'ok'", async () => {
+    const fetchImpl = makeFetch(() =>
+      jsonResponse({
+        usage: {
+          rolling: { status: "ok", percent: 0, resetsAt: null },
+          weekly: { status: "exhausted", percent: 100, resetsAt: null },
+          monthly: { status: "ok", percent: 50, resetsAt: null },
+        },
+      }),
+    );
+    const adapter = new OpenCodeGoAdapter({
+      keychainResolver: async () => "sk-test",
+      fetchImpl,
+    });
+    const snap = await adapter.fetchCredits(makeAccount());
+    expect(snap.windows.map((w) => w.type)).toEqual(["5h", "monthly"]);
+  });
+
+  it("fetchCredits returns empty snapshot when usage is missing", async () => {
     const fetchImpl = makeFetch(() => jsonResponse({}));
     const adapter = new OpenCodeGoAdapter({
       keychainResolver: async () => "sk-test",
@@ -161,6 +192,24 @@ describe("OpenCodeGoAdapter", () => {
     });
     const snap = await adapter.fetchCredits(makeAccount());
     expect(snap.windows).toEqual([]);
+  });
+
+  it("fetchCredits clamps percent to [0, 100]", async () => {
+    const fetchImpl = makeFetch(() =>
+      jsonResponse({
+        usage: {
+          rolling: { status: "ok", percent: 150, resetsAt: null },
+          weekly: { status: "ok", percent: -20, resetsAt: null },
+        },
+      }),
+    );
+    const adapter = new OpenCodeGoAdapter({
+      keychainResolver: async () => "sk-test",
+      fetchImpl,
+    });
+    const snap = await adapter.fetchCredits(makeAccount());
+    expect(snap.windows[0]).toMatchObject({ used: 100, remaining: 0 });
+    expect(snap.windows[1]).toMatchObject({ used: 0, remaining: 100 });
   });
 
   it("fetchCredits throws ProviderError on 401", async () => {
@@ -216,7 +265,7 @@ describe("OpenCodeGoAdapter", () => {
   it("fetchCredits rejects non api_key credentials", async () => {
     const adapter = new OpenCodeGoAdapter({
       keychainResolver: async () => "sk-test",
-      fetchImpl: makeFetch(() => jsonResponse({})),
+      fetchImpl: makeFetch(() => jsonResponse(REAL_RESPONSE)),
     });
     await expect(
       adapter.fetchCredits(makeAccount({ credentials: { kind: "manual" } })),
@@ -225,13 +274,7 @@ describe("OpenCodeGoAdapter", () => {
 
   it("two accounts with the same adapter fetch independently", async () => {
     const seenKeys: string[] = [];
-    const fetchImpl = makeFetch((url) => {
-      const auth = url.includes("?") ? "" : "";
-      void auth;
-      return jsonResponse({
-        rolling5h: { usageDollars: 1, limitDollars: 12, resetInSec: 7200 },
-      });
-    });
+    const fetchImpl = makeFetch(() => jsonResponse(REAL_RESPONSE));
     const adapter = new OpenCodeGoAdapter({
       keychainResolver: async (ref) => {
         seenKeys.push(ref);
