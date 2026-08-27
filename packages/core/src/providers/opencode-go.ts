@@ -106,6 +106,9 @@ export class OpenCodeGoAdapter implements ProviderAdapter {
     }
     const key = await this.keychainResolver(account.credentials.keychainRef);
     const json = await this.callJson<UsageResponse>(`${this.baseUrl}/zen/go/v1/usage`, key);
+    if (process.env["TOKENWATCH_DEBUG"] === "1") {
+      process.stderr.write(`[opencode-go raw] ${JSON.stringify(json)}\n`);
+    }
     const now = new Date();
     const windows: CreditWindow[] = [];
     for (const key of WINDOW_KEYS) {
@@ -143,6 +146,17 @@ export class OpenCodeGoAdapter implements ProviderAdapter {
         cause: err,
       });
     }
+    let body: string;
+    try {
+      body = await res.text();
+    } catch {
+      body = "";
+    }
+    if (process.env["TOKENWATCH_DEBUG"] === "1") {
+      process.stderr.write(
+        `[opencode-go raw ${res.status}] ${body.slice(0, 2000)}\n`,
+      );
+    }
     if (res.status === 401 || res.status === 403) {
       throw new ProviderError("auth_invalid", `OpenCode Go returned ${res.status}`, {
         retriable: false,
@@ -166,7 +180,7 @@ export class OpenCodeGoAdapter implements ProviderAdapter {
       });
     }
     try {
-      return (await res.json()) as T;
+      return JSON.parse(body) as T;
     } catch (err) {
       throw new ProviderError("parse", "Failed to parse OpenCode Go response", {
         retriable: false,
