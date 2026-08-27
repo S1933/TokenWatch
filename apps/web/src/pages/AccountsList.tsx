@@ -133,7 +133,7 @@ function AddAccountForm({
 }): JSX.Element {
   const [providerId, setProviderId] = useState<ProviderSlug>("opencode-go");
   const [name, setName] = useState("");
-  const [keychainRef, setKeychainRef] = useState("");
+  const [secret, setSecret] = useState("");
   const [path, setPath] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -144,7 +144,7 @@ function AddAccountForm({
     setError(null);
     try {
       let credentials:
-        | { kind: "api_key"; keychainRef: string }
+        | { kind: "api_key"; secret: string }
         | { kind: "oauth_file"; path: string }
         | { kind: "manual" };
       if (providerId === "claude-code") {
@@ -152,7 +152,7 @@ function AddAccountForm({
       } else if (providerId === "codex") {
         credentials = { kind: "manual" };
       } else {
-        credentials = { kind: "api_key", keychainRef };
+        credentials = { kind: "api_key", secret };
       }
       await api.createAccount({ providerId, name, credentials });
       await onCreated();
@@ -201,17 +201,18 @@ function AddAccountForm({
 
         {(providerId === "opencode-go" || providerId === "openrouter") && (
           <label className="block text-sm">
-            <span className="text-zinc-400">Keychain reference</span>
+            <span className="text-zinc-400">API key</span>
             <input
-              type="text"
-              value={keychainRef}
-              onChange={(e) => setKeychainRef(e.target.value)}
-              placeholder="openrouter/personal"
+              type="password"
+              value={secret}
+              onChange={(e) => setSecret(e.target.value)}
+              placeholder="sk-…"
               className="mt-1 w-full bg-zinc-950 border border-zinc-700 rounded-md px-3 py-2 font-mono"
               required
+              autoComplete="off"
             />
             <span className="text-zinc-600 text-xs block mt-1">
-              e.g. <code>security add-generic-password -s tokenwatch -a "{keychainRef || "openrouter/personal"}" -w</code>
+              Stored locally in macOS Keychain. Get one from your {PROVIDER_LABELS[providerId]} dashboard.
             </span>
           </label>
         )}

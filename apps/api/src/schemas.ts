@@ -7,37 +7,37 @@ export const ProviderSlugSchema = z.enum([
   "codex",
 ]);
 
-const ApiKeyCredsSchema = z.object({
+const ApiKeyRequestSchema = z.object({
   kind: z.literal("api_key"),
-  keychainRef: z.string().min(1),
+  secret: z.string().min(1).max(4096),
 });
 
-const OAuthFileCredsSchema = z.object({
+const OAuthFileRequestSchema = z.object({
   kind: z.literal("oauth_file"),
   path: z.string().min(1),
 });
 
-const OAuthCookieCredsSchema = z.object({
+const OAuthCookieRequestSchema = z.object({
   kind: z.literal("oauth_cookie"),
   cookieRef: z.string().min(1),
   workspaceId: z.string().min(1),
 });
 
-const ManualCredsSchema = z.object({
+const ManualRequestSchema = z.object({
   kind: z.literal("manual"),
 });
 
-export const AccountCredentialsSchema = z.discriminatedUnion("kind", [
-  ApiKeyCredsSchema,
-  OAuthFileCredsSchema,
-  OAuthCookieCredsSchema,
-  ManualCredsSchema,
+export const CredentialsRequestSchema = z.discriminatedUnion("kind", [
+  ApiKeyRequestSchema,
+  OAuthFileRequestSchema,
+  OAuthCookieRequestSchema,
+  ManualRequestSchema,
 ]);
 
 export const CreateAccountBodySchema = z.object({
   providerId: ProviderSlugSchema,
   name: z.string().min(1).max(64),
-  credentials: AccountCredentialsSchema,
+  credentials: CredentialsRequestSchema,
 });
 
 export const CreditWindowSchema = z.object({

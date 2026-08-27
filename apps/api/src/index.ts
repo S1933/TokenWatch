@@ -1,12 +1,11 @@
 import { resolve } from "node:path";
-import { createDb, initSchema, type Db } from "@tokenwatch/db";
+import { createDb, initSchema, ensureProvider, type Db } from "@tokenwatch/db";
+import { PROVIDER_LABELS } from "@tokenwatch/core";
 import { createServer } from "./server.js";
 import { buildRegistry } from "./services/registry.js";
-import { keychainGet } from "./services/keychain.js";
+import { macOSKeychainStore } from "./services/keychain.js";
 import { readCredentialsFile } from "./services/credentials-file.js";
 import { startBackgroundRefresh } from "./services/refresh.js";
-import { ensureProvider } from "@tokenwatch/db";
-import { PROVIDER_LABELS } from "@tokenwatch/core";
 
 const DB_PATH = process.env["TOKENWATCH_DB"] ?? "./data/tokenwatch.db";
 const PORT = Number(process.env["PORT"] ?? 4000);
@@ -21,12 +20,20 @@ const handle = createDb({ path: DB_PATH });
 initSchema(handle, MIGRATIONS_FOLDER);
 seedProviders(handle.db);
 
+const keychain = macOSKeychainStore();
+const keychainResolver = (ref: string) => keychain.get(ref);
 const registry = buildRegistry({
-  keychainResolver: keychainGet,
+  keychainResolver,
   credentialsFileReader: readCredentialsFile,
 });
 
-const app = await createServer({ db: handle.db, registry });
+const app = await createServer({
+  db: handle.db,
+  registry,
+  keychain,
+  keychainResolver,
+  credentialsFileReader: readCredentialsFile,
+});
 
 const background = startBackgroundRefresh(handle.db, registry, REFRESH_INTERVAL_MS);
 

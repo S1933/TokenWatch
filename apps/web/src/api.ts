@@ -38,6 +38,12 @@ export interface RefreshResult {
   status: AccountStatus;
 }
 
+export type CreateAccountCredentials =
+  | { kind: "api_key"; secret: string }
+  | { kind: "oauth_file"; path: string }
+  | { kind: "oauth_cookie"; cookieRef: string; workspaceId: string }
+  | { kind: "manual" };
+
 async function jsonFetch<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, {
     ...init,
@@ -56,19 +62,20 @@ async function jsonFetch<T>(url: string, init?: RequestInit): Promise<T> {
 export const api = {
   getCredits: () => jsonFetch<{ fetchedAt: string; accounts: AccountSummary[] }>("/api/credits"),
   getAccounts: () => jsonFetch<{ accounts: AccountSummary[] }>("/api/accounts"),
-  getProviders: () => jsonFetch<{ providers: { slug: ProviderSlug; name: string }[] }>("/api/providers"),
+  getProviders: () =>
+    jsonFetch<{ providers: { slug: ProviderSlug; name: string }[] }>("/api/providers"),
   refreshAccount: (id: string) =>
     jsonFetch<RefreshResult>(`/api/accounts/${id}/refresh`, { method: "POST" }),
   refreshAll: () => jsonFetch<{ results: RefreshResult[] }>("/api/refresh", { method: "POST" }),
   createAccount: (body: {
     providerId: ProviderSlug;
     name: string;
-    credentials:
-      | { kind: "api_key"; keychainRef: string }
-      | { kind: "oauth_file"; path: string }
-      | { kind: "oauth_cookie"; cookieRef: string; workspaceId: string }
-      | { kind: "manual" };
-  }) => jsonFetch<{ id: string }>("/api/accounts", { method: "POST", body: JSON.stringify(body) }),
+    credentials: CreateAccountCredentials;
+  }) =>
+    jsonFetch<{ id: string }>("/api/accounts", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
   deleteAccount: (id: string) =>
     jsonFetch<unknown>(`/api/accounts/${id}`, { method: "DELETE" }),
 };
