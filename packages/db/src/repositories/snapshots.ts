@@ -30,7 +30,7 @@ export interface CreditSnapshotRow {
 export interface SaveSnapshotInput {
   accountId: string;
   fetchedAt?: Date;
-  windows: Array<{
+  windows?: Array<{
     type: WindowType;
     used: number;
     limit: number;
@@ -56,7 +56,7 @@ export function saveSnapshot(db: Db, input: SaveSnapshotInput): string {
         createdAt: now,
       })
       .run();
-    if (input.windows.length > 0) {
+    if (input.windows && input.windows.length > 0) {
       tx.insert(creditWindows)
         .values(
           input.windows.map((w) => ({

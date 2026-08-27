@@ -3,9 +3,24 @@
   "version": "0.0.1",
   "private": true,
   "type": "module",
+  "main": "./dist/server.js",
   "scripts": {
-    "dev": "echo 'API reserved for Phase 7'",
-    "build": "echo 'API reserved for Phase 7'",
-    "test": "echo 'no tests yet'"
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "test": "echo 'no tests yet'",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@fastify/cors": "^10.0.1",
+    "@tokenwatch/core": "workspace:*",
+    "@tokenwatch/db": "workspace:*",
+    "fastify": "^5.1.0",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.6.3"
   }
 }
