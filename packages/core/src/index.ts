@@ -18,6 +18,7 @@ export {
   type CredentialsFileReader,
   type OAuthTokenExtractor,
 } from "./providers/claude-code.js";
+export { CodexUnsupportedAdapter } from "./providers/codex-unsupported.js";
 
 export type { Account, AccountCredentials } from "./types/account.js";
 export type {
