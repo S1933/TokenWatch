@@ -8,3 +8,9 @@ coverage
 .vitest-cache
 .turbo
 *.tsbuildinfo
+
+# Local data (SQLite, logs)
+data/
+*.db
+*.db-shm
+*.db-wal

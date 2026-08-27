@@ -45,13 +45,14 @@ export type CreateAccountCredentials =
   | { kind: "manual" };
 
 async function jsonFetch<T>(url: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(url, {
-    ...init,
-    headers: {
-      "content-type": "application/json",
-      ...(init?.headers ?? {}),
-    },
-  });
+  const hasBody = init?.body !== undefined && init.body !== null;
+  const headers: Record<string, string> = {
+    ...(init?.headers as Record<string, string> | undefined ?? {}),
+  };
+  if (hasBody && headers["content-type"] === undefined) {
+    headers["content-type"] = "application/json";
+  }
+  const res = await fetch(url, { ...init, headers });
   if (!res.ok) {
     const text = await res.text();
     throw new Error(`HTTP ${res.status}: ${text}`);
