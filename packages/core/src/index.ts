@@ -3,6 +3,12 @@ export { ProviderRegistry } from "./registry.js";
 export { MockProviderAdapter, type MockSnapshotSpec, type MockWindowSpec } from "./mock.js";
 export { ProviderError } from "./errors.js";
 
+export {
+  OpenRouterAdapter,
+  parseLimitReset,
+  type OpenRouterAdapterDeps,
+} from "./providers/openrouter.js";
+
 export type { Account, AccountCredentials } from "./types/account.js";
 export type {
   CreditSnapshot,
