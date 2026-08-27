@@ -47,21 +47,39 @@ GET https://opencode.ai/zen/go/v1/usage
 Authorization: Bearer <key>
 ```
 
-### Réponse attendue (proposée dans issue #31084)
+### Réponse réelle (validée le 2026-08-27 avec une vraie clé)
 ```json
 {
-  "rolling5h": { "usageDollars": 2.34, "limitDollars": 12, "usagePercent": 19.5, "resetInSec": 7200 },
-  "weekly":    { "usageDollars": 8.91, "limitDollars": 30, "usagePercent": 29.7, "resetInSec": 345600 },
-  "monthly":   { "usageDollars": 15.00, "limitDollars": 60, "usagePercent": 25.0, "resetInSec": 1414800 }
+  "usage": {
+    "rolling": {
+      "status": "ok",
+      "percent": 0,
+      "resetsAt": "2026-08-28T02:07:05.869Z"
+    },
+    "weekly": {
+      "status": "ok",
+      "percent": 43,
+      "resetsAt": "2026-08-31T00:00:00.869Z"
+    },
+    "monthly": {
+      "status": "ok",
+      "percent": 96,
+      "resetsAt": "2026-09-07T06:54:02.869Z"
+    }
+  }
 }
 ```
+
+> ⚠️ **L'issue #31084 spéculait sur un format `usageDollars` / `limitDollars` / `resetInSec`. La réalité est plus simple : juste un `percent` (0-100) par fenêtre, et un timestamp ISO `resetsAt`. Pas de notion de dollars dans l'API.**
 
 ### Mapping vers CreditSnapshot
 | Window | `type` | `unit` | `used` | `limit` | `remaining` | `resetAt` |
 | ------ | ------ | ------ | ------ | ------- | ----------- | --------- |
-| 5h     | `5h`   | `usd`  | `usageDollars` | `limitDollars` | `limitDollars - usageDollars` | now + `resetInSec` |
-| Weekly | `weekly` | `usd` | idem | idem | idem | idem |
-| Monthly | `monthly` | `usd` | idem | idem | idem | idem |
+| 5h     | `5h`   | `percent` | `usage.rolling.percent` | `100` | `100 - percent` | `new Date(usage.rolling.resetsAt)` |
+| Weekly | `weekly` | `percent` | `usage.weekly.percent` | `100` | idem | `new Date(usage.weekly.resetsAt)` |
+| Monthly | `monthly` | `percent` | `usage.monthly.percent` | `100` | idem | `new Date(usage.monthly.resetsAt)` |
+
+Si `status` n'est pas `"ok"`, on skip la fenêtre (défensif contre drift backend).
 
 ### Fenêtres exposées
 3 : `5h`, `weekly`, `monthly`.
