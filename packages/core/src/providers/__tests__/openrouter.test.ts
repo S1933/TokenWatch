@@ -134,6 +134,24 @@ describe("OpenRouterAdapter", () => {
     expect(w.resetAt).toBeNull();
   });
 
+  it("fetchCredits uses /credits total_usage even when /auth/key reports 0 usage (pay-as-you-go)", async () => {
+    const fetchImpl = makeFetch({
+      "/auth/key": () =>
+        jsonResponse({ data: { usage: 0, limit: null, limit_remaining: null } }),
+      "/credits": () => jsonResponse({ data: { total_credits: 60, total_usage: 39.66 } }),
+    });
+    const adapter = new OpenRouterAdapter({
+      keychainResolver: async () => "«redacted:sk-…»",
+      fetchImpl,
+    });
+    const snap = await adapter.fetchCredits(makeAccount());
+    const w = snap.windows[0]!;
+    expect(w.used).toBeCloseTo(39.66, 2);
+    expect(w.limit).toBe(60);
+    expect(w.remaining).toBeCloseTo(20.34, 2);
+    expect(w.resetAt).toBeNull();
+  });
+
   it("fetchCredits works with regular key (no /credits access)", async () => {
     const fetchImpl = makeFetch({
       "/auth/key": () =>

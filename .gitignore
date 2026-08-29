@@ -14,3 +14,8 @@ data/
 *.db
 *.db-shm
 *.db-wal
+
+# Linux secret store (chmod 600, never commit)
+secrets.json
+*.tokenwatch*.key
+~/.config/tokenwatch/secrets.json

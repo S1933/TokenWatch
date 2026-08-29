@@ -22,6 +22,7 @@ import {
   macOSKeychainStore,
   type KeychainStore,
 } from "./services/keychain.js";
+import { FileKeychainStore } from "./services/file-keychain.js";
 import { readCredentialsFile } from "./services/credentials-file.js";
 import {
   refreshAccount,
@@ -34,6 +35,12 @@ const MIGRATIONS_FOLDER = resolve(
   import.meta.dirname,
   "../../../packages/db/drizzle",
 );
+
+export function resolveStore(): KeychainStore {
+  return process.platform === "darwin"
+    ? macOSKeychainStore()
+    : new FileKeychainStore(process.env["TOKENWATCH_SECRETS_FILE"]);
+}
 
 interface SerializedSnapshot {
   id: string;
@@ -172,8 +179,9 @@ function printHuman(output: Output): void {
           w.resetAt != null
             ? `  resets ${new Date(w.resetAt).toLocaleString()}`
             : "";
+        const label = displayWindowLabel(a.providerId, w.type);
         console.log(
-          `      ${w.type.padEnd(8)} ${pad(w.used, 7)} / ${pad(w.limit, 7)} ${w.unit.padEnd(8)} (${pad(w.remaining, 7)} remaining)${reset}`,
+          `      ${label.padEnd(8)} ${pad(w.used, 7)} / ${pad(w.limit, 7)} ${w.unit.padEnd(8)} (${pad(w.remaining, 7)} remaining)${reset}`,
         );
       }
     } else if (!a.snapshot?.error) {
@@ -186,11 +194,20 @@ function pad(n: number, w: number): string {
   return n.toString().padStart(w);
 }
 
+type WindowTypeLabel = "5h" | "daily" | "weekly" | "monthly";
+
+function displayWindowLabel(providerId: string, type: string): string {
+  // OpenRouter is pay-as-you-go: the "monthly" window actually represents the
+  // prepaid USD budget (no reset). Label it "budget" for clarity.
+  if (providerId === "openrouter" && type === "monthly") return "budget";
+  return type;
+}
+
 async function cmdCredits(opts: { refresh: boolean; human: boolean }): Promise<void> {
   const { handle, close } = openDb();
   try {
     if (opts.refresh) {
-      const keychain = macOSKeychainStore();
+      const keychain = resolveStore();
       const registry = buildRegistry(keychain);
       const results = await refreshAll(handle.db, registry);
       for (const r of results) {
@@ -217,6 +234,7 @@ async function cmdAdd(opts: {
   provider: ProviderSlug;
   name: string;
   secret?: string;
+  secretFile?: string;
   path?: string;
 }): Promise<void> {
   const { handle, close } = openDb();
@@ -230,12 +248,18 @@ async function cmdAdd(opts: {
     } else if (opts.provider === "codex") {
       credentials = { kind: "manual" };
     } else {
-      if (!opts.secret) {
-        throw new Error(`--secret is required for ${opts.provider} (or use --secret-stdin)`);
+      if (!opts.secret && !opts.secretFile) {
+        throw new Error(
+          `--secret (or --secret-file) is required for ${opts.provider}`,
+        );
       }
+      const secret =
+        opts.secretFile !== undefined
+          ? await readSecretFile(opts.secretFile)
+          : opts.secret!;
       const ref = `acc-${crypto.randomUUID()}`;
-      const keychain = macOSKeychainStore();
-      await keychain.set(ref, opts.secret.trim());
+      const keychain = resolveStore();
+      await keychain.set(ref, secret.trim());
       credentials = { kind: "api_key", keychainRef: ref };
     }
     const acc = createAccount(handle.db, {
@@ -265,7 +289,7 @@ async function cmdRemove(id: string): Promise<void> {
     const ok = deleteAccount(handle.db, id);
     if (!ok) throw new Error(`Failed to delete ${id}`);
     if (acc.credentials.kind === "api_key") {
-      const keychain = macOSKeychainStore();
+      const keychain = resolveStore();
       await keychain.delete(acc.credentials.keychainRef).catch(() => undefined);
     }
     printJson({ removed: id });
@@ -293,6 +317,27 @@ async function cmdAccounts(): Promise<void> {
   }
 }
 
+async function readSecretFile(path: string): Promise<string> {
+  const content = await readSecretFileRaw(path);
+  const trimmed = content.trim();
+  if (trimmed.length === 0) {
+    throw new Error(`Secret file '${path}' is empty`);
+  }
+  return trimmed;
+}
+
+async function readSecretFileRaw(path: string): Promise<string> {
+  const fs = await import("node:fs/promises");
+  try {
+    return await fs.readFile(path, "utf8");
+  } catch (err) {
+    throw new Error(
+      `Failed to read secret file '${path}'. Write the secret there with: printf '%s\\n' '<key>' > '${path}' && chmod 600 '${path}'`,
+      { cause: err },
+    );
+  }
+}
+
 function printHelp(): void {
   console.log(`TokenWatch CLI
 
@@ -313,6 +358,7 @@ Flags (add-account):
   --provider    One of: ${PROVIDER_SLUGS.join(", ")}
   --name        Display name (e.g. "Personal")
   --secret      API key (for opencode-go, openrouter)
+  --secret-file Path to a local file whose first line is the API key (never in chat/argv)
   --path        Path to credentials file (for claude-code)
                 codex requires no credentials
 
@@ -321,6 +367,8 @@ Examples:
   pnpm credits --refresh
   pnpm credits --human
   pnpm add-account --provider opencode-go --name Personal --secret 'sk-...'
+  printf '%s\n' 'sk-...' > ~/.tokenwatch-opencode.key && chmod 600 ~/.tokenwatch-opencode.key
+  pnpm add-account --provider opencode-go --name Personal --secret-file ~/.tokenwatch-opencode.key
   pnpm add-account --provider codex --name Personal
   pnpm add-account --provider claude-code --name Work --path ~/.claude/.credentials.json
   pnpm remove-account 49cdcea6-f62f-4368-8424-ef2bffa3cf50
@@ -381,11 +429,14 @@ async function main(): Promise<void> {
         provider: ProviderSlug;
         name: string;
         secret?: string;
+        secretFile?: string;
         path?: string;
       } = { provider, name };
       const secret = typeof flags["secret"] === "string" ? flags["secret"] : undefined;
+      const secretFile = typeof flags["secret-file"] === "string" ? flags["secret-file"] : undefined;
       const path = typeof flags["path"] === "string" ? flags["path"] : undefined;
       if (secret !== undefined) opts.secret = secret;
+      if (secretFile !== undefined) opts.secretFile = secretFile;
       if (path !== undefined) opts.path = path;
       await cmdAdd(opts);
     } else if (cmd === "remove-account" || cmd === "remove" || cmd === "rm") {

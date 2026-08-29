@@ -123,6 +123,28 @@ export class OpenRouterAdapter implements ProviderAdapter {
       });
     }
     const key = await this.keychainResolver(account.credentials.keychainRef);
+
+    // Pay-as-you-go balance. /credits reports acCOUNT-level spend
+    // (total_credits prepaid minus total_usage) which is the correct
+    // "how much do I have left" for a regular key. /auth/key only exposes
+    // per-key usage (often 0) — prefer /credits when reachable, fall back
+    // to /auth/key otherwise.
+    const credits = await this.tryCredits(key);
+    if (credits?.total_credits != null) {
+      const limit = credits.total_credits;
+      const used = Math.max(0, Math.min(credits.total_usage ?? 0, limit));
+      const window: CreditWindow = {
+        type: "monthly",
+        used,
+        limit,
+        remaining: Math.max(limit - used, 0),
+        unit: "usd",
+        resetAt: null,
+      };
+      return { accountId: account.id, fetchedAt: new Date(), windows: [window] };
+    }
+
+    // Fallback: per-key limit from /auth/key (no wallet balance exposed).
     const auth = await this.callJson<AuthKeyResponse>(`${this.baseUrl}/auth/key`, key);
     const keyData = auth.data;
     if (!keyData) {
@@ -133,20 +155,9 @@ export class OpenRouterAdapter implements ProviderAdapter {
 
     const usage = keyData.usage ?? 0;
     const explicitLimit = keyData.limit ?? null;
-    const explicitRemaining = keyData.limit_remaining ?? null;
     const limitReset = keyData.limit_reset ?? null;
 
-    let cap = explicitLimit;
-    if (cap == null) {
-      const credits = await this.tryCredits(key);
-      if (credits?.total_credits != null) {
-        cap = credits.total_credits;
-      }
-    }
-    if (cap == null) {
-      cap = usage;
-    }
-
+    const cap = explicitLimit ?? usage;
     const used = Math.min(usage, cap);
     const remaining = Math.max(cap - used, 0);
     const resetAt =
@@ -161,7 +172,6 @@ export class OpenRouterAdapter implements ProviderAdapter {
       resetAt,
     };
 
-    void explicitRemaining;
     return {
       accountId: account.id,
       fetchedAt: new Date(),
